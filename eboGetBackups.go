@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 // build a list with the latest backup file in each directory
@@ -109,22 +111,54 @@ func fileExists(n string, ns []string) bool {
 	return false
 }
 
+var root = &cobra.Command{
+	Use:   "ebobackup",
+	Short: "a tool to collect ebo backups",
+	Run: func(cmd *cobra.Command, args []string) {
+		backupAndArchive()
+	},
+}
+
 func main() {
 
+	log.SetFlags(0)
+
+	if err := root.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func backupAndArchive() {
 	log.Printf("starting backup\n")
 	config := loadConfig(getConfigFile())
 
 	log.Printf("checking backups in %s\n", config.ESBackupPath)
+	files := config.getBackupFiles()
+	log.Printf("found %d backups\n", len(files))
 
+	config.collectBackups(files)
+
+	if config.Archive {
+		log.Printf("starting archive\n")
+		config.archiveBackups(files)
+	}
+
+	log.Printf("backup completed\n")
+}
+
+func (config *configSettings) getBackupFiles() []string {
 	files := []string{}
 	err := filepath.Walk(config.ESBackupPath, visitLatestBackupFiles(&files))
 	if err != nil {
 		log.Fatal(err)
 	}
+	return files
+}
 
-	log.Printf("found %d backups\n", len(files))
+func (config *configSettings) collectBackups(files []string) {
 
-	err = os.MkdirAll(strings.ReplaceAll(config.BackupFolder, "/", "\\\\"), os.ModeDir)
+	err := os.MkdirAll(strings.ReplaceAll(config.BackupFolder, "/", "\\\\"), os.ModeDir)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -150,25 +184,26 @@ func main() {
 			copyFileTo(file, config.BackupFolder)
 		}
 	}
+}
 
-	if config.Archive && config.ArchiveFolder != "" {
-		log.Printf("starting archive\n")
+func (config *configSettings) archiveBackups(files []string) {
 
-		err := os.MkdirAll(config.ArchiveFolder, os.ModeDir)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		zip := getZipFile(&config)
-		log.Printf("creating archive `%s`\n", zip)
-		ZipFiles(zip, files)
+	if config.ArchiveFolder == "" {
+		log.Fatal("error, no archive folder.")
 	}
 
-	log.Printf("backup completed\n")
+	err := os.MkdirAll(config.ArchiveFolder, os.ModeDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	zip := config.getZipFile()
+	log.Printf("creating archive `%s`\n", zip)
+	ZipFiles(zip, files)
 }
 
 // generate zip-file name from config and the current date
-func getZipFile(config *configSettings) string {
+func (config *configSettings) getZipFile() string {
 
 	currentTime := time.Now()
 
