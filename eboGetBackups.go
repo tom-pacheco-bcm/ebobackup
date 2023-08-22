@@ -20,6 +20,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var exeName = filepath.Base(os.Args[0])
+var configName = changeExt(exeName, ".config")
+
 // build a list with the latest backup file in each directory
 func visitLatestBackupFiles(files *[]string) filepath.WalkFunc {
 	var currentDir string
@@ -114,15 +117,16 @@ func fileExists(n string, ns []string) bool {
 var root = &cobra.Command{
 	Use:   "ebobackup",
 	Short: "a tool to collect ebo backups",
+	Long: `Get latest EBO Backups and copy to a specified folder.
+
+	searches for the default config file if it is not provided. 
+	`,
 	Run: func(cmd *cobra.Command, args []string) {
 		backupAndArchive()
 	},
 }
 
 func main() {
-
-	log.SetFlags(0)
-
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -141,9 +145,14 @@ func backupAndArchive() {
 
 	if config.Archive {
 		log.Printf("starting archive\n")
-		config.archiveBackups(files)
-	}
+		fileName := config.archiveBackups(files)
+		log.Printf("archive complete\n")
 
+		if config.Ftp {
+			log.Printf("uploading archive to ftp\n")
+			config.uploadArchive(fileName)
+		}
+	}
 	log.Printf("backup completed\n")
 }
 
@@ -186,7 +195,7 @@ func (config *configSettings) collectBackups(files []string) {
 	}
 }
 
-func (config *configSettings) archiveBackups(files []string) {
+func (config *configSettings) archiveBackups(files []string) string {
 
 	if config.ArchiveFolder == "" {
 		log.Fatal("error, no archive folder.")
@@ -197,9 +206,11 @@ func (config *configSettings) archiveBackups(files []string) {
 		log.Fatal(err)
 	}
 
-	zip := config.getZipFile()
-	log.Printf("creating archive `%s`\n", zip)
-	ZipFiles(zip, files)
+	fileName := config.getZipFile()
+	log.Printf("creating archive `%s`\n", fileName)
+	ZipFiles(fileName, files)
+
+	return fileName
 }
 
 // generate zip-file name from config and the current date
@@ -237,8 +248,6 @@ func (config *configSettings) getZipFile() string {
 }
 
 func usage() {
-	exeName := filepath.Base(os.Args[0])
-	configName := changeExt(exeName, ".config")
 
 	fmt.Printf(`%[1]s
 	Get latest EBO Backups and copy to a specified folder.

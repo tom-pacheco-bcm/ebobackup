@@ -2,8 +2,8 @@ package main
 
 import (
 	"bytes"
-	"io/ioutil"
 	"log"
+	"os"
 	"strings"
 )
 
@@ -16,6 +16,10 @@ type configSettings struct {
 	ArchiveAddYear  bool
 	ArchiveAddMonth bool
 	ArchiveISOWeek  bool
+	Ftp             bool
+	FtpUri          string
+	FtpUser         string
+	FtpPass         string
 }
 
 func parseConfig(file []byte) configSettings {
@@ -31,20 +35,26 @@ func parseConfig(file []byte) configSettings {
 	}
 
 	return configSettings{
-		ESBackupPath:    settings["esbackuppath"],
-		BackupFolder:    settings["backupfolder"],
+		ESBackupPath: settings["esbackuppath"],
+		BackupFolder: settings["backupfolder"],
+
 		Archive:         strings.ToLower(settings["archive"]) == "true",
 		ArchiveFolder:   settings["archivefolder"],
 		ArchiveName:     settings["archivename"],
 		ArchiveAddYear:  strings.ToLower(settings["archiveaddyear"]) == "true",
 		ArchiveAddMonth: strings.ToLower(settings["archiveaddmonth"]) == "true",
 		ArchiveISOWeek:  strings.ToLower(settings["archiveisoweek"]) == "true",
+
+		Ftp:     strings.ToLower(settings["ftp"]) == "true",
+		FtpUri:  settings["ftpuri"],
+		FtpUser: settings["ftpuser"],
+		FtpPass: settings["ftppass"],
 	}
 }
 
 func loadConfig(configFile string) configSettings {
 
-	file, e := ioutil.ReadFile(configFile)
+	file, e := os.ReadFile(configFile)
 	if e != nil {
 		log.Fatal(e)
 	}
