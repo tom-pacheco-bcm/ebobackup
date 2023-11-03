@@ -9,6 +9,7 @@ Makes a Zip Archive file with latest backups.
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -55,24 +56,26 @@ func visitLatestBackupFiles(files *[]string) filepath.WalkFunc {
 	}
 }
 
+var ErrMissingConfigFile = errors.New("not found")
+
 // get config file either the default config or one passed by argument
-func getConfigFile() string {
+func getConfigFile() (string, error) {
 
 	configFile := changeExt(os.Args[0], ".config")
 
-	if len(os.Args) > 1 {
-		if _, err := os.Stat(os.Args[1]); err == nil {
-			configFile = os.Args[1]
+	for i := 1; i < len(os.Args); i++ {
+		_, err := os.Stat(os.Args[i])
+		if err != nil {
+			continue
 		}
+		configFile = os.Args[i]
 	}
 
 	if _, err := os.Stat(configFile); err != nil {
-		log.Printf("Error config file '%s' not found!\n", configFile)
-		usage()
-		os.Exit(1)
+		return configFile, ErrMissingConfigFile
 	}
 
-	return configFile
+	return configFile, nil
 }
 
 // StringPredicate is a predicate function for strings
@@ -122,20 +125,58 @@ var root = &cobra.Command{
 	searches for the default config file if it is not provided. 
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
-		backupAndArchive()
+		err := backupAndArchive()
+		if err != nil {
+			cmd.Usage()
+		}
+	},
+}
+
+var findCmd = &cobra.Command{
+	Use:   "find",
+	Short: "list the ebo servers backup locations",
+	Run: func(cmd *cobra.Command, args []string) {
+		listLocations()
+	},
+}
+
+var listCmd = &cobra.Command{
+	Use:   "list",
+	Short: "list the ebo backups",
+	Run: func(cmd *cobra.Command, args []string) {
+		file, err := getConfigFile()
+		if err != nil {
+			log.Printf("Error config file '%s' not found!\n", file)
+			cmd.Usage()
+			return
+		}
+		config := loadConfig(file)
+		files := config.getBackupFiles()
+		for _, file := range files {
+			fmt.Println(file)
+		}
 	},
 }
 
 func main() {
+
+	root.AddCommand(findCmd)
+	root.AddCommand(listCmd)
+
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func backupAndArchive() {
+func backupAndArchive() error {
 	log.Printf("starting backup\n")
-	config := loadConfig(getConfigFile())
+	file, err := getConfigFile()
+	if err != nil {
+		log.Printf("Error config file '%s' not found!\n", file)
+		return err
+	}
+	config := loadConfig(file)
 
 	log.Printf("checking backups in %s\n", config.ESBackupPath)
 	files := config.getBackupFiles()
@@ -154,6 +195,7 @@ func backupAndArchive() {
 		}
 	}
 	log.Printf("backup completed\n")
+	return nil
 }
 
 func (config *configSettings) getBackupFiles() []string {
@@ -247,7 +289,7 @@ func (config *configSettings) getZipFile() string {
 	return filepath.Join(config.ArchiveFolder, zipFile)
 }
 
-func usage() {
+func Usage() {
 
 	fmt.Printf(`%[1]s
 	Get latest EBO Backups and copy to a specified folder.
