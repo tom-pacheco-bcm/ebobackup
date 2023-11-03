@@ -24,6 +24,8 @@ import (
 var exeName = filepath.Base(os.Args[0])
 var configName = changeExt(exeName, ".config")
 
+var logFile string
+
 // build a list with the latest backup file in each directory
 func visitLatestBackupFiles(files *[]string) filepath.WalkFunc {
 	var currentDir string
@@ -61,21 +63,11 @@ var ErrMissingConfigFile = errors.New("not found")
 // get config file either the default config or one passed by argument
 func getConfigFile() (string, error) {
 
-	configFile := changeExt(os.Args[0], ".config")
-
-	for i := 1; i < len(os.Args); i++ {
-		_, err := os.Stat(os.Args[i])
-		if err != nil {
-			continue
-		}
-		configFile = os.Args[i]
+	if _, err := os.Stat(configName); err != nil {
+		return configName, ErrMissingConfigFile
 	}
 
-	if _, err := os.Stat(configFile); err != nil {
-		return configFile, ErrMissingConfigFile
-	}
-
-	return configFile, nil
+	return configName, nil
 }
 
 // StringPredicate is a predicate function for strings
@@ -125,6 +117,14 @@ var root = &cobra.Command{
 	searches for the default config file if it is not provided. 
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
+
+		if logFile != "" {
+			if logOut, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE, os.ModePerm); err == nil {
+				log.SetOutput(logOut)
+				defer logOut.Close()
+			}
+		}
+
 		err := backupAndArchive()
 		if err != nil {
 			cmd.Usage()
@@ -162,6 +162,8 @@ func main() {
 
 	root.AddCommand(findCmd)
 	root.AddCommand(listCmd)
+	root.Flags().StringVar(&logFile, "log", "", "optional log file")
+	root.Flags().StringVar(&configName, "config", configName, "configuration file")
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -170,6 +172,7 @@ func main() {
 }
 
 func backupAndArchive() error {
+
 	log.Printf("starting backup\n")
 	file, err := getConfigFile()
 	if err != nil {
