@@ -20,6 +20,7 @@ type configSettings struct {
 	FtpUri          string
 	FtpUser         string
 	FtpPass         string
+	FtpWeekday      string
 }
 
 func parseConfig(file []byte) configSettings {
@@ -30,7 +31,8 @@ func parseConfig(file []byte) configSettings {
 	for _, line := range lines {
 		kv := bytes.Split(line, []byte{'='})
 		if len(kv) == 2 {
-			settings[string(bytes.ToLower(bytes.TrimSpace(kv[0])))] = string(bytes.Trim(kv[1], "\" \n\r"))
+			val := string(bytes.Trim(bytes.Split(kv[1], []byte{'#'})[0], "\" \n\r"))
+			settings[string(bytes.ToLower(bytes.TrimSpace(kv[0])))] = val
 		}
 	}
 
@@ -45,10 +47,11 @@ func parseConfig(file []byte) configSettings {
 		ArchiveAddMonth: strings.ToLower(settings["archiveaddmonth"]) == "true",
 		ArchiveISOWeek:  strings.ToLower(settings["archiveisoweek"]) == "true",
 
-		Ftp:     strings.ToLower(settings["ftp"]) == "true",
-		FtpUri:  settings["ftpuri"],
-		FtpUser: settings["ftpuser"],
-		FtpPass: settings["ftppass"],
+		Ftp:        strings.ToLower(settings["ftp"]) == "true",
+		FtpUri:     settings["ftpuri"],
+		FtpUser:    settings["ftpuser"],
+		FtpPass:    settings["ftppass"],
+		FtpWeekday: settings["ftpweekday"],
 	}
 }
 

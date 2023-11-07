@@ -174,6 +174,10 @@ func main() {
 func backupAndArchive() error {
 
 	log.Printf("starting backup\n")
+	defer func() {
+		log.Printf("backup completed\n")
+	}()
+
 	file, err := getConfigFile()
 	if err != nil {
 		log.Printf("Error config file '%s' not found!\n", file)
@@ -187,17 +191,25 @@ func backupAndArchive() error {
 
 	config.collectBackups(files)
 
-	if config.Archive {
+	if !config.Archive {
+		return nil
+	}
+
 		log.Printf("starting archive\n")
 		fileName := config.archiveBackups(files)
 		log.Printf("archive complete\n")
 
-		if config.Ftp {
-			log.Printf("uploading archive to ftp\n")
-			config.uploadArchive(fileName)
+	if !config.Ftp {
+		return nil
 		}
+
+	if !config.isFtpScheduled() {
+		log.Printf("ftp not scheduled\n")
+		return nil
 	}
-	log.Printf("backup completed\n")
+
+	log.Printf("uploading archive to ftp\n")
+	config.uploadArchive(fileName)
 	return nil
 }
 
@@ -290,6 +302,19 @@ func (config *configSettings) getZipFile() string {
 	}
 
 	return filepath.Join(config.ArchiveFolder, zipFile)
+}
+
+// isFtpScheduled checks if ftp is scheduled
+func (config *configSettings) isFtpScheduled() bool {
+
+	if config.FtpWeekday == "" {
+		return true
+	}
+
+	currentTime := time.Now()
+	weekday := strings.ToLower(currentTime.Weekday().String())
+
+	return config.FtpWeekday == weekday
 }
 
 func Usage() {
