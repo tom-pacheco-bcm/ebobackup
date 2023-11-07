@@ -9,6 +9,7 @@ Makes a Zip Archive file with latest backups.
 package main
 
 import (
+	_ "embed"
 	"errors"
 	"fmt"
 	"log"
@@ -21,6 +22,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+//go:embed version.txt
+var version string
+var exeDir = filepath.Dir(os.Args[0])
 var exeName = filepath.Base(os.Args[0])
 var configName = changeExt(exeName, ".config")
 
@@ -58,16 +62,27 @@ func visitLatestBackupFiles(files *[]string) filepath.WalkFunc {
 	}
 }
 
-var ErrMissingConfigFile = errors.New("not found")
+var ErrMissingConfigFile = errors.New("file not found")
 
 // get config file either the default config or one passed by argument
 func getConfigFile() (string, error) {
 
-	if _, err := os.Stat(configName); err != nil {
+	if configName == "" {
 		return configName, ErrMissingConfigFile
 	}
 
-	return configName, nil
+	if _, err := os.Stat(configName); err == nil {
+		return configName, nil
+	}
+	if path.IsAbs(configName) {
+		return configName, ErrMissingConfigFile
+
+	}
+	name := path.Join(exeDir)
+	if _, err := os.Stat(name); err != nil {
+		return name, ErrMissingConfigFile
+	}
+	return name, nil
 }
 
 // StringPredicate is a predicate function for strings
@@ -140,6 +155,14 @@ var findCmd = &cobra.Command{
 	},
 }
 
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "print the version of the command",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Printf("%s version %s", exeName, version)
+	},
+}
+
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "list the ebo backups",
@@ -161,6 +184,7 @@ var listCmd = &cobra.Command{
 func main() {
 
 	root.AddCommand(findCmd)
+	root.AddCommand(versionCmd)
 	root.AddCommand(listCmd)
 	root.Flags().StringVar(&logFile, "log", "", "optional log file")
 	root.Flags().StringVar(&configName, "config", configName, "configuration file")
@@ -195,13 +219,13 @@ func backupAndArchive() error {
 		return nil
 	}
 
-		log.Printf("starting archive\n")
-		fileName := config.archiveBackups(files)
-		log.Printf("archive complete\n")
+	log.Printf("starting archive\n")
+	fileName := config.archiveBackups(files)
+	log.Printf("archive complete\n")
 
 	if !config.Ftp {
 		return nil
-		}
+	}
 
 	if !config.isFtpScheduled() {
 		log.Printf("ftp not scheduled\n")
