@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -37,10 +38,9 @@ func listLocations() {
 	}
 
 	for _, es := range ess {
-		dbPath, _ := es.DBPath()
+		dbPath, _ := es.DBBackupPath()
 		fmt.Println(es.name, ":", dbPath)
 	}
-
 }
 
 func EnterpriseServers() ([]*eboService, error) {
@@ -127,6 +127,14 @@ func readImagePath(key string) (string, error) {
 
 var ErrNotFound = errors.New("path to DB folder not found")
 
+func readBackupPath(installPath string) (string, error) {
+	db, err := readDBPath(installPath)
+	if err != nil {
+		return "", err
+	}
+	return path.Join(path.Dir(db), es_backup_folder), nil
+}
+
 func readDBPath(installPath string) (string, error) {
 
 	// C:\Program Files (x86)\Schneider Electric EcoStruxure\Building Operation 2.0\Enterprise Server\etc\dbpath.properties
@@ -184,9 +192,30 @@ func EnterpriseServersDBPaths(paths []string) []string {
 	return dbFolders
 }
 
+func EnterpriseServerBackupPaths(paths []string) []string {
+
+	dbFolders := make([]string, 0, len(paths))
+	for i := range paths {
+		img, err := readBackupPath(paths[i])
+		if err != nil {
+			continue
+		}
+		dbFolders = append(dbFolders, img)
+	}
+
+	return dbFolders
+}
+
 func (es *eboService) InstallPath() string {
 	return filepath.Dir(filepath.Dir(es.image))
+}
 
+func (es *eboService) DBBackupPath() (string, error) {
+	dbPath, err := es.DBPath()
+	if err != nil {
+		return "", err
+	}
+	return path.Join(path.Dir(dbPath), es_backup_folder), nil
 }
 
 func (es *eboService) DBPath() (string, error) {

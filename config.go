@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -13,6 +14,7 @@ type configSettings struct {
 	ArchiveFolder   string
 	ArchiveName     string
 	Archive         bool
+	ArchiveCount    int
 	ArchiveAddYear  bool
 	ArchiveAddMonth bool
 	ArchiveISOWeek  bool
@@ -36,7 +38,7 @@ func parseConfig(file []byte) configSettings {
 		}
 	}
 
-	return configSettings{
+	config := configSettings{
 		ESBackupPath: settings["esbackuppath"],
 		BackupFolder: settings["backupfolder"],
 
@@ -53,6 +55,12 @@ func parseConfig(file []byte) configSettings {
 		FtpPass:    settings["ftppass"],
 		FtpWeekday: settings["ftpweekday"],
 	}
+
+	if sc, ok := settings["archivecount"]; ok {
+		config.ArchiveCount, _ = strconv.Atoi(sc)
+	}
+
+	return config
 }
 
 func loadConfig(configFile string) configSettings {

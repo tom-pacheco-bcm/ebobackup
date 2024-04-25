@@ -12,10 +12,12 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,6 +29,7 @@ var version string
 var exeDir = filepath.Dir(os.Args[0])
 var exeName = filepath.Base(os.Args[0])
 var configName = changeExt(exeName, ".config")
+var defaultConfigFile = path.Join(exeDir, configName)
 
 var logFile string
 
@@ -74,11 +77,12 @@ func getConfigFile() (string, error) {
 	if _, err := os.Stat(configName); err == nil {
 		return configName, nil
 	}
+
 	if path.IsAbs(configName) {
 		return configName, ErrMissingConfigFile
-
 	}
-	name := path.Join(exeDir)
+
+	name := filepath.Join(exeDir, configName)
 	if _, err := os.Stat(name); err != nil {
 		return name, ErrMissingConfigFile
 	}
@@ -102,7 +106,7 @@ func filter(xs []string, predicate StringPredicate) []string {
 	return xs[:count]
 }
 
-func readDir(path string) []string {
+func readDirNames(path string) []string {
 	dir, err := os.Open(path)
 	if err != nil {
 		log.Fatal(err)
@@ -113,6 +117,19 @@ func readDir(path string) []string {
 		log.Fatal(err)
 	}
 	return names
+}
+
+func readDir(path string) []fs.FileInfo {
+	dir, err := os.Open(path)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer dir.Close()
+	fis, err := dir.Readdir(-1)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return fis
 }
 
 func fileExists(n string, ns []string) bool {
@@ -181,11 +198,27 @@ var listCmd = &cobra.Command{
 	},
 }
 
+var initCmd = &cobra.Command{
+	Use:   "init",
+	Short: "create an initial backup configuration file",
+	Run: func(cmd *cobra.Command, args []string) {
+		file, err := getConfigFile()
+		if err != ErrMissingConfigFile {
+			log.Printf("Error config file '%s' already exists!\n", file)
+			cmd.Usage()
+			return
+		}
+		// log.Printf("Config File: %q", file)
+		initializeConfig()
+	},
+}
+
 func main() {
 
 	root.AddCommand(findCmd)
 	root.AddCommand(versionCmd)
 	root.AddCommand(listCmd)
+	root.AddCommand(initCmd)
 	root.Flags().StringVar(&logFile, "log", "", "optional log file")
 	root.Flags().StringVar(&configName, "config", configName, "configuration file")
 
@@ -256,7 +289,7 @@ func (config *configSettings) collectBackups(files []string) {
 	// delete old .xbk backup files.
 	// keeping current files so we don't need to copy again
 	// comparison is by name only
-	names := readDir(config.BackupFolder)
+	names := readDirNames(config.BackupFolder)
 	names = filter(names, IsFileXBK)
 	for _, file := range names {
 		if !fileExists(file, files) {
@@ -291,7 +324,34 @@ func (config *configSettings) archiveBackups(files []string) string {
 	log.Printf("creating archive `%s`\n", fileName)
 	ZipFiles(fileName, files)
 
+	config.archiveRemoveOld()
+
 	return fileName
+}
+
+func (config *configSettings) archiveRemoveOld() {
+
+	log.Printf("removing old archives")
+
+	if config.ArchiveFolder == "" {
+		log.Fatal("error, no archive folder.")
+	}
+	if config.ArchiveCount < 1 {
+		return
+	}
+
+	fis := readDir(config.ArchiveFolder)
+	if len(fis) <= config.ArchiveCount {
+		return
+	}
+
+	sort.Slice(fis, func(i, j int) bool { return fis[i].ModTime().After(fis[j].ModTime()) })
+
+	fis = fis[config.ArchiveCount:]
+	for _, fi := range fis {
+		log.Printf("removing %q", fi.Name())
+		os.Remove(filepath.Join(config.ArchiveFolder, fi.Name()))
+	}
 }
 
 // generate zip-file name from config and the current date
@@ -352,10 +412,11 @@ Usage:
 searches for the default config file '%[2]s' if it is not provided. 
 
 Sample Config: 
-ESBackupPath    = "C:\ProgramData\Schneider Electric EcoStruxure\Building Operation 2.0\Enterprise Server\db_backup" 
+ESBackupPath    = "C:\ProgramData\Schneider Electric EcoStruxure\Building Operation 6.0\Enterprise Server\db_backup" 
 BackupFolder    = "D:\backups\db_backup"
 ArchiveFolder   = "D:\backups\archives" 
 Archive         = True
+ArchiveCount    = 5
 ArchiveName     = "my_site_backups"
 ArchiveISOWeek  = True
 ArchiveAddYear  = False
