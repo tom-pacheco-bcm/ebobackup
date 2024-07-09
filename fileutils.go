@@ -8,44 +8,62 @@ import (
 	"strings"
 )
 
-// re-path a file to a new directory
-func changeDir(path, newDir string) string {
-	return filepath.Join(newDir, filepath.Base(path))
-}
-
 // copy a file to the destination directory
-func copyFileTo(sourceFile, destDir string) {
+func copyFileTo(sourceFile, destDir string) (string, error) {
 
 	// get new filename and check if doesn't exist
-	destFile := changeDir(sourceFile, destDir)
+	destFile := filepath.Join(destDir, filepath.Base(sourceFile))
 	if _, err := os.Stat(destFile); err == nil {
-		return // file exists no need to copy
+		return destFile, err // file exists no need to copy
 	}
 
-	original, err := os.Open(sourceFile)
+	err := copyFile(destFile, sourceFile)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer original.Close()
+
+	err = copyInfo(destFile, sourceFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return destFile, err
+}
+
+func copyInfo(destFile, sourceFile string) error {
+
+	info, err := os.Stat(sourceFile)
+	if err != nil {
+		return err
+	}
+
+	modeTime := info.ModTime()
+	os.Chtimes(destFile, modeTime, modeTime)
+	return nil
+}
+
+// copyFile copies a file to the destination file
+func copyFile(dstName, srcName string) error {
+
+	src, err := os.Open(srcName)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
 
 	// Create new file
-	newFile, err := os.Create(destFile)
+	dst, err := os.Create(dstName)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	defer newFile.Close()
+	defer dst.Close()
 
-	_, err = io.Copy(newFile, original)
+	_, err = io.Copy(dst, src)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
-	sourceInfo, err := os.Stat(sourceFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-	modeTime := sourceInfo.ModTime()
-	os.Chtimes(destFile, modeTime, modeTime)
+	return nil
 }
 
 // remove the file extension from the path
@@ -58,6 +76,6 @@ func changeExt(path, newExt string) string {
 	return removeExt(path) + newExt
 }
 
-func isFileExt(path, ext string) bool {
+func hasExt(path, ext string) bool {
 	return strings.EqualFold(filepath.Ext(path), ext)
 }

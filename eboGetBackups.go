@@ -12,10 +12,10 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -29,11 +29,12 @@ var version string
 var exeDir = filepath.Dir(os.Args[0])
 var exeName = filepath.Base(os.Args[0])
 var configName = changeExt(exeName, ".config")
-var defaultConfigFile = path.Join(exeDir, configName)
+var defaultConfigFile = filepath.Join(exeDir, configName)
 
 var logFile string
 
-// build a list with the latest backup file in each directory
+// visitLatestBackupFiles returns a WalkFunc to build a file list with the
+// latest backup file from each directory
 func visitLatestBackupFiles(files *[]string) filepath.WalkFunc {
 	var currentDir string
 	var latestTime time.Time
@@ -67,7 +68,9 @@ func visitLatestBackupFiles(files *[]string) filepath.WalkFunc {
 
 var ErrMissingConfigFile = errors.New("file not found")
 
-// get config file either the default config or one passed by argument
+// getConfigFile returns the config file. if one is passed
+// by argument then it is returned. otherwise the default
+// config is returned
 func getConfigFile() (string, error) {
 
 	if configName == "" {
@@ -78,7 +81,7 @@ func getConfigFile() (string, error) {
 		return configName, nil
 	}
 
-	if path.IsAbs(configName) {
+	if filepath.IsAbs(configName) {
 		return configName, ErrMissingConfigFile
 	}
 
@@ -132,6 +135,7 @@ func readDir(path string) []fs.FileInfo {
 	return fis
 }
 
+// fileExists tests if exists in list
 func fileExists(n string, ns []string) bool {
 	for _, f := range ns {
 		if filepath.Base(n) == filepath.Base(f) {
@@ -139,6 +143,22 @@ func fileExists(n string, ns []string) bool {
 		}
 	}
 	return false
+}
+
+func openLog() io.Closer {
+
+	if logFile == "" {
+		return nil
+	}
+
+	logOut, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE, fs.ModePerm)
+
+	if err != nil {
+		return nil
+	}
+
+	log.SetOutput(logOut)
+	return logOut
 }
 
 var root = &cobra.Command{
@@ -150,11 +170,9 @@ var root = &cobra.Command{
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
 
-		if logFile != "" {
-			if logOut, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE, os.ModePerm); err == nil {
-				log.SetOutput(logOut)
-				defer logOut.Close()
-			}
+		logger := openLog()
+		if logger != nil {
+			defer logger.Close()
 		}
 
 		err := backupAndArchive()
@@ -208,7 +226,6 @@ var initCmd = &cobra.Command{
 			cmd.Usage()
 			return
 		}
-		// log.Printf("Config File: %q", file)
 		initializeConfig()
 	},
 }
@@ -219,6 +236,7 @@ func main() {
 	root.AddCommand(versionCmd)
 	root.AddCommand(listCmd)
 	root.AddCommand(initCmd)
+
 	root.Flags().StringVar(&logFile, "log", "", "optional log file")
 	root.Flags().StringVar(&configName, "config", configName, "configuration file")
 
@@ -270,6 +288,7 @@ func backupAndArchive() error {
 	return nil
 }
 
+// getBackupFiles gets the latest set of backup files from the backup path
 func (config *configSettings) getBackupFiles() []string {
 	files := []string{}
 	err := filepath.Walk(config.ESBackupPath, visitLatestBackupFiles(&files))
@@ -279,9 +298,10 @@ func (config *configSettings) getBackupFiles() []string {
 	return files
 }
 
+// collectBackups reads all sub folders
 func (config *configSettings) collectBackups(files []string) {
 
-	err := os.MkdirAll(strings.ReplaceAll(config.BackupFolder, "/", "\\\\"), os.ModeDir)
+	err := os.MkdirAll(filepath.FromSlash(config.BackupFolder), fs.ModePerm|fs.ModeDir)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -294,28 +314,35 @@ func (config *configSettings) collectBackups(files []string) {
 	for _, file := range names {
 		if !fileExists(file, files) {
 			log.Printf("deleting old backup `%s` from %s\n", file, config.BackupFolder)
-			err := os.Remove(path.Join(config.BackupFolder, file))
+			err := os.Remove(filepath.Join(config.BackupFolder, file))
 			if err != nil {
-				log.Fatal(err)
+				log.Printf("error deleting backup: %v", err)
 			}
 		}
 	}
 
 	for _, file := range files {
-		if !fileExists(file, names) {
-			log.Printf("copying `%s`\n", filepath.Base(file))
-			copyFileTo(file, config.BackupFolder)
+		if fileExists(file, names) {
+			continue
 		}
+		log.Printf("copying `%s`\n", filepath.Base(file))
+		newFile, err := copyFileTo(file, config.BackupFolder)
+		if err != nil {
+			return
+		}
+
+		validateFile(newFile)
 	}
 }
 
+// archiveBackups creates a new archive file with the current backups
 func (config *configSettings) archiveBackups(files []string) string {
 
 	if config.ArchiveFolder == "" {
 		log.Fatal("error, no archive folder.")
 	}
 
-	err := os.MkdirAll(config.ArchiveFolder, os.ModeDir)
+	err := os.MkdirAll(config.ArchiveFolder, fs.ModePerm|fs.ModeDir)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -329,6 +356,7 @@ func (config *configSettings) archiveBackups(files []string) string {
 	return fileName
 }
 
+// archiveRemoveOld removes old archives
 func (config *configSettings) archiveRemoveOld() {
 
 	log.Printf("removing old archives")
@@ -350,11 +378,14 @@ func (config *configSettings) archiveRemoveOld() {
 	fis = fis[config.ArchiveCount:]
 	for _, fi := range fis {
 		log.Printf("removing %q", fi.Name())
-		os.Remove(filepath.Join(config.ArchiveFolder, fi.Name()))
+		err := os.Remove(filepath.Join(config.ArchiveFolder, fi.Name()))
+		if err != nil {
+			log.Printf("error [%v] removing archive `%s`\n", err, fi.Name())
+		}
 	}
 }
 
-// generate zip-file name from config and the current date
+// getZipFile generates a zip-file name from config and the current date
 func (config *configSettings) getZipFile() string {
 
 	currentTime := time.Now()

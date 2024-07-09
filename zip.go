@@ -64,3 +64,29 @@ func addFileToZip(zipWriter *zip.Writer, filename string) error {
 	_, err = io.Copy(writer, fileToZip)
 	return err
 }
+
+func CheckZipFile(filename string) error {
+
+	info, err := os.Stat(filename)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	zipFile, err := os.Open(filename)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer zipFile.Close()
+
+	_, err = zip.NewReader(zipFile, info.Size())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// for _, f := range zipReader.File {
+	// 	f.Name
+	// 	zipReader.Open()
+	// }
+
+	return nil
+}

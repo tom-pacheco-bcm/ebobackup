@@ -7,5 +7,5 @@ const (
 
 // IsFileXBK tests if file is a EBO Backup file by checking the file extension
 func IsFileXBK(name string) bool {
-	return isFileExt(name, Ext)
+	return hasExt(name, Ext)
 }
