@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/secsy/goftp"
@@ -18,7 +17,6 @@ func (config *configSettings) uploadArchive(fileName string) {
 		Timeout:            10 * time.Second,
 		// Logger:             os.Stderr,
 	}
-
 	client, err := goftp.DialConfig(ftpConfig, config.FtpUri)
 	if err != nil {
 		panic(err)
@@ -32,11 +30,11 @@ func (config *configSettings) uploadArchive(fileName string) {
 	}
 	defer srcFile.Close()
 
-	destFileName := filepath.Base(fileName)
-	log.Printf("uploading `%s`\n", destFileName)
+	destName := config.getFtpFile(fileName)
+	log.Printf("uploading `%s`\n", destName)
 
 	// create destination file
-	err = client.Store(destFileName, srcFile)
+	err = client.Store(destName, srcFile)
 	if err != nil {
 		log.Fatal(err)
 	}

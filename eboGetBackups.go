@@ -271,7 +271,7 @@ func backupAndArchive() error {
 	}
 
 	log.Printf("starting archive\n")
-	fileName := config.archiveBackups(files)
+	archiveName := config.archiveBackups(files)
 	log.Printf("archive complete\n")
 
 	if !config.Ftp {
@@ -284,7 +284,7 @@ func backupAndArchive() error {
 	}
 
 	log.Printf("uploading archive to ftp\n")
-	config.uploadArchive(fileName)
+	config.uploadArchive(archiveName)
 	return nil
 }
 
@@ -402,21 +402,58 @@ func (config *configSettings) getZipFile() string {
 	if config.ArchiveISOWeek {
 		isoYear, isoWeek := currentTime.ISOWeek()
 		zipFile = fmt.Sprintf("%s_%04dW%02d%s", zipFile, isoYear, isoWeek, zipExt)
-	} else {
-		if config.ArchiveAddYear {
-			currentYear := currentTime.Year()
-			zipFile = fmt.Sprintf("%s_%04d", zipFile, currentYear)
-
-		}
-		if config.ArchiveAddMonth {
-			currentMonth := currentTime.Month()
-			zipFile = fmt.Sprintf("%s_%02d", zipFile, currentMonth)
-
-		}
-		zipFile = fmt.Sprintf("%s%s", zipFile, zipExt)
+		return filepath.Join(config.ArchiveFolder, zipFile)
 	}
 
+	if config.ArchiveWeekday {
+		weekday := currentTime.Weekday().String()
+		zipFile = fmt.Sprintf("%s_%s%s", zipFile, weekday, zipExt)
+		return filepath.Join(config.ArchiveFolder, zipFile)
+	}
+
+	if config.ArchiveAddYear {
+		currentYear := currentTime.Year()
+		zipFile = fmt.Sprintf("%s_%04d", zipFile, currentYear)
+	}
+	if config.ArchiveAddMonth {
+		currentMonth := currentTime.Month()
+		zipFile = fmt.Sprintf("%s_%02d", zipFile, currentMonth)
+	}
+	zipFile = fmt.Sprintf("%s%s", zipFile, zipExt)
+
 	return filepath.Join(config.ArchiveFolder, zipFile)
+}
+
+// getFtpFile generates a ftp-file name from config and the current date
+func (config *configSettings) getFtpFile(archive string) string {
+
+	currentTime := time.Now()
+
+	fileExt := filepath.Ext(archive)
+
+	ftpFile := config.FtpName
+	if ftpFile == "" {
+		ftpFile = config.ArchiveName
+	}
+
+	if fileExt == "" {
+		fileExt = ".zip"
+	} else {
+		ftpFile = strings.TrimSuffix(ftpFile, fileExt)
+	}
+
+	if config.FtpAddYear {
+		currentYear := currentTime.Year()
+		ftpFile = fmt.Sprintf("%s_%04d", ftpFile, currentYear)
+	}
+	if config.FtpAddMonth {
+		currentMonth := currentTime.Month()
+		ftpFile = fmt.Sprintf("%s_%02d", ftpFile, currentMonth)
+
+	}
+
+	ftpFile = fmt.Sprintf("%s%s", ftpFile, fileExt)
+	return ftpFile
 }
 
 // isFtpScheduled checks if ftp is scheduled
@@ -450,8 +487,13 @@ Archive         = True
 ArchiveCount    = 5
 ArchiveName     = "my_site_backups"
 ArchiveISOWeek  = True
+ArchiveWeekDay  = False
 ArchiveAddYear  = False
 ArchiveAddMonth = False
+Ftp             = False
+FtpName         = "my_site_backups"
+FtpAddYear      = True
+FtpAddMonth     = False
 
 Examples:
 	> %[1]s

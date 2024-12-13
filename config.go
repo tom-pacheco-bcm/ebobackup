@@ -18,7 +18,11 @@ type configSettings struct {
 	ArchiveAddYear  bool
 	ArchiveAddMonth bool
 	ArchiveISOWeek  bool
+	ArchiveWeekday  bool
 	Ftp             bool
+	FtpAddYear      bool
+	FtpAddMonth     bool
+	FtpName         string
 	FtpUri          string
 	FtpUser         string
 	FtpPass         string
